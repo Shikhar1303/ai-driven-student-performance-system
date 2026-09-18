@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Attendance-to-Performance Analyzer</title>
+    <!-- Load TensorFlow.js library for browser AI -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 100%;
+            padding: 30px;
+        }
+        h1 {
+            color: #2c3e50;
+            font-size: 24px;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        p.subtitle {
+            color: #7f8c8d;
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .form-group {
+            margin-bottom: 18px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #34495e;
+            font-size: 14px;
+        }
+        input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #1d4ed8;
+        }
+        .status {
+            margin-top: 15px;
+            font-size: 13px;
+            color: #059669;
+            text-align: center;
+            font-weight: 600;
+        }
+        .report-card {
+            display: none;
+            margin-top: 25px;
+            border-top: 2px solid #e2e8f0;
+            padding-top: 20px;
+        }
+        .score-box {
+            background: #eff6ff;
+            border-left: 4px solid #2563eb;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .score-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #1e40af;
+            font-weight: bold;
+        }
+        .score-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1e3a8a;
+            margin: 5px 0;
+        }
+        .metric-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .high { background-color: #dcfce7; color: #166534; }
+        .medium { background-color: #fef9c3; color: #854d0e; }
+        .low { background-color: #fee2e2; color: #991b1b; }
+        .recommendation {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Browser AI Attendance & Performance Predictor</h1>
+    <p class="subtitle">Runs a Tensorflow.js Neural Network directly in your browser</p>
+
+    <div class="form-group">
+        <label for="attendanceRate">Attendance Percentage (%)</label>
+        <input type="number" id="attendanceRate" min="0" max="100" placeholder="e.g. 85" value="85">
+    </div>
+
+    <div class="form-group">
+        <label for="punctualityRate">Punctuality Rate (%)</label>
+        <input type="number" id="punctualityRate" min="0" max="100" placeholder="e.g. 90" value="90">
+    </div>
+
+    <div class="form-group">
+        <label for="consecutiveAbsences">Max Consecutive Absences (Days)</label>
+        <input type="number" id="consecutiveAbsences" min="0" max="30" placeholder="e.g. 1" value="1">
+    </div>
+
+    <button onclick="generateReport()">Predict Performance & Generate Report</button>
+    <div id="status" class="status">Initializing AI model...</div>
+
+    <!-- Output Performance Report -->
+    <div id="reportCard" class="report-card">
+        <h3>Performance Report</h3>
+        
+        <div class="score-box">
+            <div class="score-title">Predicted Performance Rating</div>
+            <div id="scoreValue" class="score-value">0%</div>
+            <span id="categoryBadge" class="metric-badge high">Good</span>
+        </div>
+
+        <h4>Insights & Recommendations:</h4>
+        <p id="recommendationText" class="recommendation"></p>
+    </div>
+</div>
+
+<script>
+    let model;
+
+    // Build and Train an AI Neural Network on Page Load
+    async function initAIModel() {
+        const statusDiv = document.getElementById('status');
+        
+        // Define simple Artificial Neural Network Architecture
+        model = tf.sequential();
+        model.add(tf.layers.dense({units: 8, inputShape: [3], activation: 'relu'}));
+        model.add(tf.layers.dense({units: 4, activation: 'relu'}));
+        model.add(tf.layers.dense({units: 1, activation: 'sigmoid'})); // Outputs scaled 0.0 to 1.0
+
+        model.compile({
+            optimizer: tf.train.adam(0.01),
+            loss: 'meanSquaredError'
+        });
+
+        // Synthetic Training Data (Normalized inputs: attendance, punctuality, inverted max absences)
+        // [Attendance %, Punctuality %, 1 - (Absences/10)] -> Performance Score %
+        const xs = tf.tensor2d([
+            [0.95, 0.90, 1.00],
+            [0.85, 0.85, 0.90],
+            [0.70, 0.60, 0.70],
+            [0.50, 0.40, 0.40],
+            [0.98, 0.95, 1.00],
+            [0.30, 0.20, 0.10],
+            [0.80, 0.75, 0.80],
+            [0.60, 0.80, 0.50]
+        ]);
+
+        const ys = tf.tensor2d([
+            [0.94],
+            [0.82],
+            [0.65],
+            [0.45],
+            [0.97],
+            [0.25],
+            [0.78],
+            [0.58]
+        ]);
+
+        // Train Model locally in user browser
+        await model.fit(xs, ys, {epochs: 150});
+        statusDiv.innerText = "AI Model Ready!";
+    }
+
+    // Call model initialization on load
+    window.onload = initAIModel;
+
+    // Run prediction and output report
+    async function generateReport() {
+        const att = parseFloat(document.getElementById('attendanceRate').value);
+        const punc = parseFloat(document.getElementById('punctualityRate').value);
+        const abs = parseFloat(document.getElementById('consecutiveAbsences').value);
+
+        if (isNaN(att) || isNaN(punc) || isNaN(abs)) {
+            alert('Please fill all fields accurately.');
+            return;
+        }
+
+        // Normalize inputs for neural net
+        const normAtt = att / 100;
+        const normPunc = punc / 100;
+        const normAbs = Math.max(0, 1 - (abs / 10)); // Higher penalty for consecutive absences
+
+        // Input tensor
+        const inputTensor = tf.tensor2d([[normAtt, normPunc, normAbs]]);
+        
+        // Inference
+        const prediction = model.predict(inputTensor);
+        const scoreResult = (await prediction.data())[0] * 100; // Convert back to percentage
+
+        // UI Updates
+        document.getElementById('reportCard').style.display = 'block';
+        document.getElementById('scoreValue').innerText = scoreResult.toFixed(1) + '%';
+
+        const categoryBadge = document.getElementById('categoryBadge');
+        const recommendationText = document.getElementById('recommendationText');
+
+        if (scoreResult >= 80) {
+            categoryBadge.innerText = 'High Performer';
+            categoryBadge.className = 'metric-badge high';
+            recommendationText.innerText = `Strong consistency observed. High attendance (${att}%) and regular punctuality correlates with optimal output. Maintain current routines.`;
+        } else if (scoreResult >= 60) {
+            categoryBadge.innerText = 'Moderate Performer';
+            categoryBadge.className = 'metric-badge medium';
+            recommendationText.innerText = `Satisfactory engagement. Improving punctuality (${punc}%) and reducing consecutive absences will help boost performance closer to optimal metrics.`;
+        } else {
+            categoryBadge.innerText = 'At-Risk / Low Output';
+            categoryBadge.className = 'metric-badge low';
+            recommendationText.innerText = `Flagged for potential performance drop. Attendance level (${att}%) combined with absence clustering indicates a risk of burnout or detachment. Intervention recommended.`;
+        }
+
+        // Cleanup Tensors
+        inputTensor.dispose();
+        prediction.dispose();
+    }
+</script>
+
+</body>
+</html>
